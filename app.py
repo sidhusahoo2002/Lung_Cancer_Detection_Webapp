@@ -1,5 +1,5 @@
 # =========================================================
-# app.py — LUNG CANCER IMAGE ANALYSIS (REVIEWER VERSION)
+# app.py — LUNG CANCER IMAGE ANALYSIS (REVIEWER READY)
 # =========================================================
 
 import streamlit as st
@@ -19,10 +19,11 @@ st.set_page_config(
 )
 
 # =========================================================
-# GLOBAL CSS
+# GLOBAL CSS (Professional + Animations)
 # =========================================================
 st.markdown("""
 <style>
+/* Button Styling */
 .stButton > button {
     background: linear-gradient(90deg, #00c6ff, #0072ff);
     color: white;
@@ -31,18 +32,49 @@ st.markdown("""
     height: 56px;
     font-weight: bold;
     border: none;
+    transition: transform 0.2s ease;
 }
 .stButton > button:hover {
-    transform: scale(1.02);
+    transform: scale(1.03);
+}
+
+/* Fade & Slide Animation */
+@keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in {
+    animation: fadeSlide 0.6s ease-out;
+}
+
+/* Result Card */
+.result-card {
+    background: #0f172a;
+    padding: 22px;
+    border-radius: 16px;
+    margin-top: 20px;
+    border: 1px solid #1e293b;
+}
+
+/* Image Hover */
+img {
+    border-radius: 14px;
+    transition: transform 0.3s ease;
+}
+img:hover {
+    transform: scale(1.01);
 }
 </style>
 """, unsafe_allow_html=True)
 
 # =========================================================
-# TITLE
+# HEADER
 # =========================================================
 st.markdown("## 🫁 Lung Cancer Detection from CT Images")
-st.info("Upload a lung CT scan image to analyze whether it is **Benign or Malignant**.")
+st.info(
+    "Upload a lung CT scan image to analyze whether the case is "
+    "**Benign or Malignant**"
+)
 
 # =========================================================
 # Device
@@ -87,9 +119,15 @@ if uploaded:
     image = Image.open(uploaded).convert("RGB")
     st.image(image, caption="Uploaded CT Image", use_container_width=True)
 
-
     if st.button("🔍 Analyze Image", use_container_width=True):
-        with st.spinner("Analyzing image..."):
+        status = st.empty()
+
+        status.markdown(
+            "<div class='fade-in'>🧠 <b>Analyzing CT image...</b></div>",
+            unsafe_allow_html=True
+        )
+
+        with st.spinner("Extracting deep features & running XGBoost classifier..."):
             img_tensor = transform(image).unsqueeze(0).to(DEVICE)
 
             with torch.no_grad():
@@ -97,22 +135,30 @@ if uploaded:
 
             prob = xgb_model.predict_proba(features)[0]
             benign, malignant = float(prob[0]), float(prob[1])
-
             prediction = "Malignant" if malignant > 0.5 else "Benign"
 
-        st.success(f"🧠 Prediction Result: **{prediction}**")
+        # =================================================
+        # RESULT DISPLAY
+        # =================================================
+        st.markdown(f"""
+        <div class="result-card fade-in">
+            <h3>🧠 Prediction Result</h3>
+            <h2 style="color:#38bdf8;">{prediction}</h2>
+        </div>
+        """, unsafe_allow_html=True)
 
-        st.markdown("### 📊 Confidence Scores")
-        st.progress(malignant)
+        st.markdown("<div class='fade-in'><h4>📊 Confidence Scores</h4></div>",
+                    unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
-        col1.metric("Benign Probability", f"{benign:.2f}")
-        col2.metric("Malignant Probability", f"{malignant:.2f}")
+        with col1:
+            st.metric("Benign Probability", f"{benign:.2f}")
+        with col2:
+            st.metric("Malignant Probability", f"{malignant:.2f}")
+
+        st.progress(malignant)
 
 # =========================================================
 # FOOTER
 # =========================================================
 st.markdown("---")
-st.caption(
-    "⚠️ This system is developed for academic and research demonstration purposes only."
-)
