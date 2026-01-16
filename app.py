@@ -1,23 +1,13 @@
 # =========================================================
-# app.py — MAIN STREAMLIT APPLICATION (FINAL)
+# app.py — LUNG CANCER IMAGE ANALYSIS (REVIEWER VERSION)
 # =========================================================
 
 import streamlit as st
-import streamlit.components.v1 as components
-from pathlib import Path
-
 import torch
 import timm
 import xgboost as xgb
 from PIL import Image
 from torchvision import transforms
-
-from auth import login, register
-from database import (
-    create_user, get_user_by_email, get_all_users, delete_user,
-    save_report, get_patient_reports, get_all_reports, add_doctor_remark
-)
-from pdf_report import generate_pdf
 
 # =========================================================
 # Streamlit Config
@@ -29,7 +19,7 @@ st.set_page_config(
 )
 
 # =========================================================
-# GLOBAL CSS (overlay + buttons)
+# GLOBAL CSS
 # =========================================================
 st.markdown("""
 <style>
@@ -49,17 +39,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
-# Session State
+# TITLE
 # =========================================================
-if "page" not in st.session_state:
-    st.session_state.page = "index"
-
-if "user" not in st.session_state:
-    st.session_state.user = None
-
-def go(page):
-    st.session_state.page = page
-    st.rerun()
+st.markdown("## 🫁 Lung Cancer Detection from CT Images")
+st.info("Upload a lung CT scan image to analyze whether it is **Benign or Malignant**.")
 
 # =========================================================
 # Device
@@ -93,231 +76,43 @@ transform = transforms.Compose([
 ])
 
 # =========================================================
-# Load Landing Page (HTML + CSS)
+# IMAGE UPLOAD
 # =========================================================
-def load_index_page():
-    html = Path("frontend/index.html").read_text(encoding="utf-8")
-    css = Path("frontend/style.css").read_text(encoding="utf-8")
+uploaded = st.file_uploader(
+    "📤 Upload Lung CT Image",
+    type=["jpg", "jpeg", "png"]
+)
 
-    components.html(
-        f"<style>{css}</style>{html}",
-        height=600
-    )
+if uploaded:
+    image = Image.open(uploaded).convert("RGB")
+    st.image(image, caption="Uploaded CT Image", use_container_width=True)
 
-# =========================================================
-# INDEX PAGE
-# =========================================================
-if st.session_state.page == "index":
-    load_index_page()
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🔍 Analyze Image", use_container_width=True):
+        with st.spinner("Analyzing image..."):
+            img_tensor = transform(image).unsqueeze(0).to(DEVICE)
 
-    col1, col2, col3 = st.columns([1, 3, 1])
+            with torch.no_grad():
+                features = swin_model(img_tensor).cpu().numpy()
 
-    with col2:
-        if st.button("🔐 Login", use_container_width=True):
-            go("login")
+            prob = xgb_model.predict_proba(features)[0]
+            benign, malignant = float(prob[0]), float(prob[1])
 
-        if st.button("📝 Register", use_container_width=True):
-            go("register")
+            prediction = "Malignant" if malignant > 0.5 else "Benign"
 
-# =========================================================
-# LOGIN PAGE
-# =========================================================
-elif st.session_state.page == "login":
-    st.markdown("## 🔐 Login")
+        st.success(f"🧠 Prediction Result: **{prediction}**")
 
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
+        st.markdown("### 📊 Confidence Scores")
+        st.progress(malignant)
 
-    if st.button("🔓 Login", use_container_width=True):
-        user = login(email, password)
-        if user:
-            st.session_state.user = {
-                "id": user[0],
-                "name": user[1],
-                "email": user[2],
-                "role": user[4]
-            }
-            go("dashboard")
-        else:
-            st.error("Invalid email or password")
-
-    st.markdown("---")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("📝 New User? Register", use_container_width=True):
-            go("register")
-
-    with col2:
-        if st.button("⬅ Back to Home", use_container_width=True):
-            go("index")
+        col1, col2 = st.columns(2)
+        col1.metric("Benign Probability", f"{benign:.2f}")
+        col2.metric("Malignant Probability", f"{malignant:.2f}")
 
 # =========================================================
-# REGISTER PAGE
+# FOOTER
 # =========================================================
-elif st.session_state.page == "register":
-    st.markdown("## 📝 New User Registration")
-
-    name = st.text_input("Full Name")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-    role = st.selectbox("Register As", ["patient", "doctor"])
-
-    if st.button("✅ Register", use_container_width=True):
-        if get_user_by_email(email):
-            st.error("User already exists")
-        else:
-            register(name, email, password, role)
-            st.success("Registration successful! Please login.")
-            go("login")
-
-    st.markdown("---")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("🔐 Already Registered? Login", use_container_width=True):
-            go("login")
-
-    with col2:
-        if st.button("⬅ Back to Home", use_container_width=True):
-            go("index")
-
-# =========================================================
-# DASHBOARD (ROLE-BASED)
-# =========================================================
-elif st.session_state.page == "dashboard":
-    user = st.session_state.user
-
-    st.sidebar.success(f"Logged in as {user['role']}")
-    if st.sidebar.button("🚪 Logout"):
-        st.session_state.user = None
-        go("index")
-
-    # =====================================================
-    # PATIENT DASHBOARD
-    # =====================================================
-    if user["role"] == "patient":
-        st.markdown("## 🧑‍🦱 Patient Dashboard")
-        st.info("Upload CT image • Predict • Download PDF")
-
-        uploaded = st.file_uploader(
-            "Upload Lung CT Image",
-            type=["jpg", "jpeg", "png"]
-        )
-
-        if uploaded:
-            image = Image.open(uploaded).convert("RGB")
-            st.image(image, use_column_width=True)
-
-            if st.button("🔍 Predict"):
-                img_tensor = transform(image).unsqueeze(0).to(DEVICE)
-
-                with torch.no_grad():
-                    features = swin_model(img_tensor).cpu().numpy()
-
-                prob = xgb_model.predict_proba(features)[0]
-                benign, malignant = float(prob[0]), float(prob[1])
-                prediction = "Malignant" if malignant > 0.5 else "Benign"
-
-                st.success(f"🧠 Prediction: {prediction}")
-                st.progress(malignant)
-
-                pdf_path = generate_pdf(
-                    user["name"], prediction, benign, malignant
-                )
-
-                save_report(
-                    user["id"], prediction, benign, malignant, pdf_path
-                )
-
-                st.download_button(
-                    "📄 Download Medical Report",
-                    open(pdf_path, "rb"),
-                    file_name="lung_report.pdf"
-                )
-
-        st.divider()
-        st.subheader("📜 Your Medical History")
-
-        reports = get_patient_reports(user["id"])
-        for r in reports:
-            st.markdown(f"""
-            **Report ID:** {r[0]}  
-            **Prediction:** {r[2]}  
-            **Benign:** {r[3]:.2f} | **Malignant:** {r[4]:.2f}  
-            **Doctor Remark:** {r[6] or "Pending"}
-            """)
-            st.download_button(
-                "Download PDF",
-                open(r[5], "rb"),
-                file_name="report.pdf",
-                key=f"p_{r[0]}"
-            )
-            st.divider()
-
-    # =====================================================
-    # DOCTOR DASHBOARD
-    # =====================================================
-    elif user["role"] == "doctor":
-        st.markdown("## 👨‍⚕️ Doctor Dashboard")
-        st.info("Review reports & add remarks")
-
-        reports = get_all_reports()
-        for r in reports:
-            st.markdown(f"""
-            **Report ID:** {r[0]}  
-            **Patient ID:** {r[1]}  
-            **Prediction:** {r[2]}  
-            **Benign:** {r[3]:.2f} | **Malignant:** {r[4]:.2f}
-            """)
-
-            remark = st.text_area(
-                "Doctor Remark",
-                value=r[6] or "",
-                key=f"remark_{r[0]}"
-            )
-
-            if st.button("Save Remark", key=f"save_{r[0]}"):
-                add_doctor_remark(r[0], remark)
-                st.success("Remark saved")
-                st.rerun()
-
-            st.divider()
-
-    # =====================================================
-    # ADMIN DASHBOARD
-    # =====================================================
-    elif user["role"] == "admin":
-        st.markdown("## 🛠️ Admin Dashboard")
-        st.info("User management")
-
-        st.subheader("➕ Add New User")
-        a_name = st.text_input("Name")
-        a_email = st.text_input("Email")
-        a_password = st.text_input("Password", type="password")
-        a_role = st.selectbox("Role", ["patient", "doctor", "admin"])
-
-        if st.button("Create User"):
-            if get_user_by_email(a_email):
-                st.error("User already exists")
-            else:
-                create_user(a_name, a_email, a_password, a_role)
-                st.success("User created")
-                st.rerun()
-
-        st.divider()
-        st.subheader("👥 All Users")
-
-        users = get_all_users()
-        for u in users:
-            st.markdown(
-                f"**ID:** {u[0]} | **Name:** {u[1]} | **Email:** {u[2]} | **Role:** {u[3]}"
-            )
-            if st.button("❌ Delete User", key=f"del_{u[0]}"):
-                delete_user(u[0])
-                st.warning("User deleted")
-                st.rerun()
+st.markdown("---")
+st.caption(
+    "⚠️ This system is developed for academic and research demonstration purposes only."
+)
