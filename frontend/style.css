@@ -1,0 +1,56 @@
+body {
+    margin: 0;
+    font-family: "Segoe UI", sans-serif;
+    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+    color: white;
+}
+
+.container {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.card {
+    width: 100%;
+    max-width: 420px;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 40px;
+    border-radius: 20px;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    backdrop-filter: blur(10px);
+}
+
+.card h1 {
+    margin-bottom: 10px;
+}
+
+.card p {
+    opacity: 0.9;
+    margin-bottom: 30px;
+}
+
+/* VISUAL BUTTONS */
+.btn {
+    width: 100%;
+    padding: 14px;
+    margin-top: 15px;
+    border-radius: 14px;
+    font-size: 18px;
+    font-weight: bold;
+    background: linear-gradient(90deg, #00c6ff, #0072ff);
+}
+
+/* RESPONSIVE TEXT */
+@media (max-width: 480px) {
+    .card {
+        padding: 25px;
+    }
+
+    .btn {
+        font-size: 16px;
+    }
+}

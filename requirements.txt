@@ -1,0 +1,11 @@
+streamlit
+torch
+torchvision
+timm
+xgboost
+opencv-python
+numpy
+scikit-learn
+Pillow
+reportlab
+bcrypt
